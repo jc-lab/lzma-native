@@ -101,7 +101,7 @@ parse_indexes_read(lzma_index_parser_data *info,
 }
 
 extern lzma_ret
-my_lzma_parse_indexes_from_file(lzma_index_parser_data *info) lzma_nothrow
+my_lzma_parse_indexes_from_file(lzma_index_parser_data *info)
 {
 	lzma_ret ret;
 	lzma_index_parser_internal *internal = info->internal;
