@@ -430,34 +430,12 @@ error:
 
 namespace lzma {
 
-void IndexParser::Init(Local<Object> exports) {
-  Local<FunctionTemplate> tpl = Nan::New<FunctionTemplate>(New);
-  tpl->SetClassName(NewString("IndexParser"));
-  tpl->InstanceTemplate()->SetInternalFieldCount(1);
-  
-  Nan::SetPrototypeMethod(tpl, "init", Init);
-  Nan::SetPrototypeMethod(tpl, "feed", Feed);
-  Nan::SetPrototypeMethod(tpl, "parse", Parse);
-  
-  constructor.Reset(tpl->GetFunction());
-  exports->Set(NewString("IndexParser"), Nan::New<Function>(constructor));
-}
-
-NAN_METHOD(IndexParser::New) {
-  if (info.IsConstructCall()) {
-    IndexParser* self = new IndexParser();
-    if (!self) {
-      Nan::ThrowRangeError("Out of memory, cannot create IndexParser");
-      info.GetReturnValue().SetUndefined();
-      return;
-    }
-    
-    self->Wrap(info.This());
-    
-    info.GetReturnValue().Set(info.This());
-  } else {
-    info.GetReturnValue().Set(Nan::NewInstance(Nan::New<Function>(constructor), 0, NULL).ToLocalChecked());
-  }
+void IndexParser::Init(Object exports) {
+  exports["IndexParser"] = DefineClass(exports.Env(), "IndexParser", {
+    InstanceMethod("init", &IndexParser::Init),
+    InstanceMethod("feed", &IndexParser::Feed),
+    InstanceMethod("parse", &IndexParser::Parse),
+  });
 }
 
 namespace {
@@ -466,28 +444,30 @@ namespace {
     IndexParser* p = static_cast<IndexParser*>(opaque);
     return p->readCallback(opaque, buf, count, offset);
   }
-  
+
   extern "C" void* LZMA_API_CALL
   alloc_for_lzma_index(void *opaque, size_t nmemb, size_t size) {
+    IndexParser* p = static_cast<IndexParser*>(opaque);
     size_t nBytes = nmemb * size + sizeof(size_t);
-    
+
     size_t* result = static_cast<size_t*>(::malloc(nBytes));
     if (!result)
       return result;
-    
+
     *result = nBytes;
-    Nan::AdjustExternalMemory(static_cast<int64_t>(nBytes));
+    MemoryManagement::AdjustExternalMemory(p->Env(), static_cast<int64_t>(nBytes));
     return static_cast<void*>(result + 1);
   }
-  
+
   extern "C" void LZMA_API_CALL
   free_for_lzma_index(void *opaque, void *ptr) {
+    IndexParser* p = static_cast<IndexParser*>(opaque);
     if (!ptr)
       return;
-    
+
     size_t* orig = static_cast<size_t*>(ptr) - 1;
-    
-    Nan::AdjustExternalMemory(-static_cast<int64_t>(*orig));
+
+    MemoryManagement::AdjustExternalMemory(p->Env(), -static_cast<int64_t>(*orig));
     return ::free(static_cast<void*>(orig));
   }
 }
@@ -495,15 +475,15 @@ namespace {
 int64_t IndexParser::readCallback(void* opaque, uint8_t* buf, size_t count, int64_t offset) {
   currentReadBuffer = buf;
   currentReadSize = count;
-  
-  Local<Value> argv[2] = {
-    Uint64ToNumberMaxNull(count),
-    Uint64ToNumberMaxNull(offset)
+
+  Value argv[2] = {
+    Uint64ToNumberMaxNull(Env(), count),
+    Uint64ToNumberMaxNull(Env(), offset)
   };
-  
-  Local<Function> read_cb = Local<Function>::Cast(EmptyToUndefined(Nan::Get(handle(), NewString("read_cb"))));
-  Local<Value> ret = Nan::MakeCallback(handle(), read_cb, 2, argv);
-  
+
+  Function read_cb = this->Value()["read_cb"].As<Function>();
+  Value ret = read_cb.Call(handle(), 2, argv);
+
   if (currentReadBuffer) {
     info.async = true;
     return count;
@@ -514,101 +494,102 @@ int64_t IndexParser::readCallback(void* opaque, uint8_t* buf, size_t count, int6
   }
 }
 
-IndexParser::IndexParser() : isCurrentlyInParseCall(false) {
+IndexParser::IndexParser(const CallbackInfo& info)
+  : ObjectWrap(info),
+    isCurrentlyInParseCall(false) {
   lzma_index_parser_data info_ = LZMA_INDEX_PARSER_DATA_INIT;
   info = info_;
-  
+
   allocator.alloc = alloc_for_lzma_index;
   allocator.free = free_for_lzma_index;
   allocator.opaque = static_cast<void*>(this);
-  
+
   info.read_callback = read_cb;
   info.opaque = static_cast<void*>(this);
   info.allocator = &allocator;
 }
 
-NAN_METHOD(IndexParser::Init) {
-  IndexParser* p = Nan::ObjectWrap::Unwrap<IndexParser>(info.This());
-  
-  p->info.file_size = NumberToUint64ClampNullMax(info[0]);
-  p->info.memlimit = NumberToUint64ClampNullMax(info[1]);
+Value IndexParser::Init(const CallbackInfo& info) {
+  info.file_size = NumberToUint64ClampNullMax(info[0]);
+  info.memlimit = NumberToUint64ClampNullMax(info[1]);
 }
 
 Local<Object> IndexParser::getObject() const {
-  Local<Object> obj = Nan::New<Object>();
-  
-  Nan::Set(obj, NewString("streamPadding"), Uint64ToNumberMaxNull(info.stream_padding));
-  Nan::Set(obj, NewString("memlimit"), Uint64ToNumberMaxNull(info.memlimit));
-  Nan::Set(obj, NewString("streams"), Uint64ToNumberMaxNull(lzma_index_stream_count(info.index)));
-  Nan::Set(obj, NewString("blocks"), Uint64ToNumberMaxNull(lzma_index_block_count(info.index)));
-  Nan::Set(obj, NewString("fileSize"), Uint64ToNumberMaxNull(lzma_index_file_size(info.index)));
-  Nan::Set(obj, NewString("uncompressedSize"), Uint64ToNumberMaxNull(lzma_index_uncompressed_size(info.index)));
-  Nan::Set(obj, NewString("checks"), Uint64ToNumberMaxNull(lzma_index_checks(info.index)));
-  
+  Env env = Env();
+  Object obj = Object::New(env);
+
+  obj["streamPadding"] = Uint64ToNumberMaxNull(env, info.stream_padding);
+  obj["memlimit"] = Uint64ToNumberMaxNull(env, info.memlimit);
+  obj["streams"] = Uint64ToNumberMaxNull(env, lzma_index_stream_count(info.index));
+  obj["blocks"] = Uint64ToNumberMaxNull(env, lzma_index_block_count(info.index));
+  obj["fileSize"] = Uint64ToNumberMaxNull(env, lzma_index_file_size(info.index));
+  obj["uncompressedSize"] = Uint64ToNumberMaxNull(env, lzma_index_uncompressed_size(info.index));
+  obj["checks"] = Uint64ToNumberMaxNull(env, lzma_index_checks(info.index));
+
   return obj;
 }
 
-NAN_METHOD(IndexParser::Parse) {
-  IndexParser* p = Nan::ObjectWrap::Unwrap<IndexParser>(info.This());
-  if (p->isCurrentlyInParseCall) {
-    Nan::ThrowError("Cannot call IndexParser::Parse recursively");
-    return;
-  }
-  
+Value IndexParser::Parse(const CallbackInfo& info) {
+  if (isCurrentlyInParseCall)
+    throw Error::New(Env(), "Cannot call IndexParser::Parse recursively");
+
+  struct RecursionGuard {
+    explicit RecursionGuard(IndexParser* p) : p(p) {
+      p->isCurrentlyInParseCall = true;
+    }
+    ~RecursionGuard() {
+      p->isCurrentlyInParseCall = false;
+    }
+    IndexParser* p;
+  };
+
   lzma_ret ret;
-  p->isCurrentlyInParseCall = true;
-  ret = my_lzma_parse_indexes_from_file(&p->info);
-  p->isCurrentlyInParseCall = false;
-  
+  {
+    RecursionGuard guard;
+    ret = my_lzma_parse_indexes_from_file(&info);
+  }
+
   if (ret == LZMA_OK) {
-    info.GetReturnValue().Set(true);
-    return;
+    return Boolean::New(Env(), true);
   } else if (ret == LZMA_STREAM_END) {
-    info.GetReturnValue().Set(p->getObject());
-    return;
+    return getObject();
   }
-  
-  Local<Object> error = lzmaRetError(ret);
-  if (p->info.message) {
-    Nan::Set(error, NewString("message"), NewString(p->info.message));
+
+  Object error = lzmaRetError(Env(), ret);
+  if (info.message) {
+    error["message"] = String::New(Env(), info.message));
   }
-  Nan::ThrowError(Local<Value>(error));
+  throw error;
 }
 
-NAN_METHOD(IndexParser::Feed) {
-  Local<Value> value = info[0];
-  if (value.IsEmpty() || !node::Buffer::HasInstance(value)) {
-    Nan::ThrowTypeError("Expected Buffer as input");
-    return;
-  }
-  
-  IndexParser* p = Nan::ObjectWrap::Unwrap<IndexParser>(info.This());
-  
-  if (p->currentReadBuffer == NULL) {
-    Nan::ThrowError("No input data was expected");
-    return;
-  }
-  size_t length = node::Buffer::Length(value);
-  
-  if (length > p->currentReadSize)
-    length = p->currentReadSize;
-  
-  memcpy(p->currentReadBuffer, node::Buffer::Data(value), length);
-  p->currentReadBuffer = NULL;
-  
-  info.GetReturnValue().Set(Uint64ToNumberMaxNull(length));
+Value IndexParser::Feed(const CallbackInfo& info) {
+  Value value = info[0];
+  if (!value.IsTypedArray())
+    throw TypeError::New(Env(), "Expected Buffer as input");
+
+  if (currentReadBuffer == nullptr)
+    throw Error::New(Env(), "No input data was expected");
+  size_t length = value.ByteLength();
+
+  if (length > currentReadSize)
+    length = currentReadSize;
+
+  memcpy(currentReadBuffer,
+         static_cast<const uint8_t*>(value.ArrayBuffer().Data()) + value.ByteOffset(),
+         length);
+  currentReadBuffer = nullptr;
+
+  return Uint64ToNumberMaxNull(Env(), length);
 }
 
 IndexParser::~IndexParser() {
   assert(!isCurrentlyInParseCall);
   info.file_size = SIZE_MAX;
   lzma_index_end(info.index, &allocator);
-  info.index = NULL;
-  info.read_callback = NULL;
+  info.index = nullptr;
+  info.read_callback = nullptr;
   lzma_ret ret = my_lzma_parse_indexes_from_file(&info);
   assert(ret == LZMA_OPTIONS_ERROR);
 }
-
-Nan::Persistent<Function> IndexParser::constructor;
 
 }
