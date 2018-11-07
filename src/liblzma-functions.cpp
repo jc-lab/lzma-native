@@ -70,17 +70,13 @@ Value lzmaCRC32(const CallbackInfo& info) {
 }
 
 Value lzmaRawEncoderMemusage(const CallbackInfo& info) {
-  const FilterArray filters(arg);
-  if (!filters.ok())
-    throw TypeError::New(info.Env(), "rawEncoderMemusage requires filter array as arguments");
+  const FilterArray filters(info[0]);
 
   return Uint64ToNumberMaxNull(info.Env(), lzma_raw_encoder_memusage(filters.array()));
 }
 
 Value lzmaRawDecoderMemusage(const CallbackInfo& info) {
-  const FilterArray filters(arg);
-  if (!filters.ok()) {
-    throw TypeError::New(info.Env(), "rawDecoderMemusage requires filter array as arguments");
+  const FilterArray filters(info[0]);
 
   return Uint64ToNumberMaxNull(info.Env(), lzma_raw_decoder_memusage(filters.array()));
 }

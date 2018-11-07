@@ -2,7 +2,7 @@
 
 namespace lzma {
 
-FilterArray::FilterArray(Value val) : ok_(false) {
+FilterArray::FilterArray(Value val) {
   Env env = val.Env();
   HandleScope handle_scope(env);
 
@@ -17,24 +17,24 @@ FilterArray::FilterArray(Value val) : ok_(false) {
 
   for (size_t i = 0; i < len; ++i) {
     Value entry_v = arr[i];
-    if (!entry.IsObject() || !entry.As<Object>().Has(id))
+    if (!entry_v.IsObject() || !entry_v.As<Object>().Has(id_))
       throw TypeError::New(env, "Filter array expected");
     Object entry = entry_v.As<Object>();
 
-    String id = entry[id_].ToString();
+    String id = Value(entry[id_]).ToString();
     Value opt_v = entry[options_];
 
     lzma_filter f;
     f.id = FilterByName(id);
     f.options = nullptr;
 
-    if (opt_v.IsUndefined() || opt_v.IsNull()) &&
-        (f.id != LZMA_FILTER_LZMA1 && f.id != LZMA_FILTER_LZMA2) {
+    if ((opt_v.IsUndefined() || opt_v.IsNull()) &&
+        (f.id != LZMA_FILTER_LZMA1 && f.id != LZMA_FILTER_LZMA2)) {
       filters.push_back(f);
       continue;
     }
 
-    Object opt = entry[options_].ToObject();
+    Object opt = Value(entry[options_]).ToObject();
 
     optbuf.push_back(options());
     union options& bopt = optbuf.back();

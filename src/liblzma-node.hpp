@@ -17,54 +17,28 @@
 #include <string>
 #include <utility>
 #include <atomic>
+#include <mutex>
+#include <memory>
 
 namespace lzma {
   using namespace Napi;
-
-  /* internal util */
-  struct uv_mutex_guard {
-    explicit uv_mutex_guard(uv_mutex_t& m_, bool autolock = true)
-      : locked(false), m(m_)
-    {
-      if (autolock)
-        lock();
-    }
-
-    ~uv_mutex_guard() {
-      if (locked)
-        unlock();
-    }
-
-    inline void lock () {
-      uv_mutex_lock(&m);
-      locked = true;
-    }
-
-    inline void unlock () {
-      uv_mutex_unlock(&m);
-      locked = false;
-    }
-
-    bool locked;
-    uv_mutex_t& m;
-  };
 
   /* util */
   /**
    * Return the filter constant associated with a v8 String handle
    */
-  lzma_vli FilterByName(String name);
+  lzma_vli FilterByName(Value name);
 
   /**
    * If rv represents an error, throw a javascript exception representing it.
    * Always returns rv as a v8 Integer.
    */
-  Value lzmaRet(Env env, lzma_ret rv);
+  Number lzmaRet(Env env, lzma_ret rv);
 
   /**
    * Return a javascript exception representing rv.
    */
-  Object lzmaRetError(Env env, lzma_ret rv);
+  Error lzmaRetError(Env env, lzma_ret rv);
 
   /**
    * Takes a Node.js SlowBuffer or Buffer as input and populates data accordingly.
@@ -75,7 +49,7 @@ namespace lzma {
   /**
    * Return a lzma_options_lzma struct as described by the v8 Object obj.
    */
-  lzma_options_lzma parseOptionsLZMA(Object obj);
+  lzma_options_lzma parseOptionsLZMA(Value obj);
 
   /**
    * Return a v8 Number representation of an uint64_t where UINT64_MAX will be mapped to null
@@ -170,6 +144,8 @@ namespace lzma {
    */
   class LZMAStream : public ObjectWrap<LZMAStream> {
     public:
+      explicit LZMAStream(const CallbackInfo& info);
+      ~LZMAStream();
       static void InitializeExports(Object exports);
 
     /* regard as private: */
@@ -182,10 +158,7 @@ namespace lzma {
       void resetUnderlying();
       void doLZMACode();
 
-      explicit LZMAStream();
-      ~LZMAStream();
-
-      static Value New(const CallbackInfo& info);
+      static Napi::Value New(const CallbackInfo& info);
 
       void adjustExternalMemory(int64_t bytesChange);
       void reportAdjustedExternalMemoryToV8();
@@ -198,24 +171,24 @@ namespace lzma {
 
       AsyncContext async_context;
       std::atomic<int64_t> nonAdjustedExternalMemory;
-      uv_mutex_t mutex;
+      std::mutex mutex;
 
       void ResetUnderlying(const CallbackInfo& info);
-      Value SetBufsize(const CallbackInfo& info);
+      Napi::Value SetBufsize(const CallbackInfo& info);
       void Code(const CallbackInfo& info);
-      static Value Memusage(const CallbackInfo& info);
-      static Value MemlimitGet(const CallbackInfo& info);
-      static Value MemlimitSet(const CallbackInfo& info);
-      static Value RawEncoder(const CallbackInfo& info);
-      static Value RawDecoder(const CallbackInfo& info);
-      static Value FiltersUpdate(const CallbackInfo& info);
-      static Value EasyEncoder(const CallbackInfo& info);
-      static Value StreamEncoder(const CallbackInfo& info);
-      static Value AloneEncoder(const CallbackInfo& info);
-      static Value MTEncoder(const CallbackInfo& info);
-      static Value StreamDecoder(const CallbackInfo& info);
-      static Value AutoDecoder(const CallbackInfo& info);
-      static Value AloneDecoder(const CallbackInfo& info);
+      Napi::Value Memusage(const CallbackInfo& info);
+      Napi::Value MemlimitGet(const CallbackInfo& info);
+      Napi::Value MemlimitSet(const CallbackInfo& info);
+      Napi::Value RawEncoder(const CallbackInfo& info);
+      Napi::Value RawDecoder(const CallbackInfo& info);
+      Napi::Value FiltersUpdate(const CallbackInfo& info);
+      Napi::Value EasyEncoder(const CallbackInfo& info);
+      Napi::Value StreamEncoder(const CallbackInfo& info);
+      Napi::Value AloneEncoder(const CallbackInfo& info);
+      Napi::Value MTEncoder(const CallbackInfo& info);
+      Napi::Value StreamDecoder(const CallbackInfo& info);
+      Napi::Value AutoDecoder(const CallbackInfo& info);
+      Napi::Value AloneDecoder(const CallbackInfo& info);
 
       lzma_allocator allocator;
       lzma_stream _;
@@ -235,9 +208,9 @@ namespace lzma {
   class LZMAStreamCodingWorker : public AsyncWorker {
     public:
       LZMAStreamCodingWorker(LZMAStream* stream_)
-        : AsyncWorker(Function(), "LZMAStreamCodingWorker"),
+        : AsyncWorker(Function(stream_->Env(), nullptr), "LZMAStreamCodingWorker"),
           stream(stream_) {
-        Receiver()[0] = stream->handle();
+        Receiver().Set(static_cast<uint32_t>(0), stream->Value());
       }
 
       ~LZMAStreamCodingWorker() {}
@@ -260,14 +233,15 @@ namespace lzma {
 
   class IndexParser : public ObjectWrap<IndexParser> {
     public:
+      explicit IndexParser(const CallbackInfo& info);
+      ~IndexParser();
+
       static void InitializeExports(Object exports);
 
     /* regard as private: */
       int64_t readCallback(void* opaque, uint8_t* buf, size_t count, int64_t offset);
-    private:
-      explicit IndexParser();
-      ~IndexParser();
 
+    private:
       lzma_index_parser_data info;
       lzma_allocator allocator;
 
@@ -277,15 +251,10 @@ namespace lzma {
 
       Object getObject() const;
 
-      Value Init(const CallbackInfo& info);
-      Value Feed(const CallbackInfo& info);
-      Value Parse(const CallbackInfo& info);
+      void Init(const CallbackInfo& info);
+      Napi::Value Feed(const CallbackInfo& info);
+      Napi::Value Parse(const CallbackInfo& info);
   };
-
-  /**
-   * Node.js addon init function
-   */
-  void moduleInit(Local<Object> exports);
 }
 
 #endif

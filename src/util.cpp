@@ -1,13 +1,10 @@
 #include "liblzma-node.hpp"
-#include <node_buffer.h>
 #include <cstring>
 
 namespace lzma {
 
-lzma_vli FilterByName(String name) {
-  std::string cpp_string(name);
-  if (cmpto.empty())
-    return LZMA_VLI_UNKNOWN;
+lzma_vli FilterByName(Value name) {
+  std::string cpp_string(name.ToString());
 
   struct SearchEntry {
     const char* str;
@@ -33,7 +30,7 @@ lzma_vli FilterByName(String name) {
       return p->value;
 }
 
-Object lzmaRetError(Env env, lzma_ret rv) {
+Error lzmaRetError(Env env, lzma_ret rv) {
   struct ErrorInfo {
     lzma_ret code;
     const char* name;
@@ -61,17 +58,17 @@ Object lzmaRetError(Env env, lzma_ret rv) {
   while (p->code != rv && p->code != (lzma_ret)-1)
     ++p;
 
-  Object err = Error::New(env, p->desc);
-  err["code"] = Number::New(env, rv);
-  err["name"] = String::New(env, p->name);
-  err["desc"] = String::New(env, p->desc);
+  Error err = Error::New(env, p->desc);
+  err.Set("code", Number::New(env, rv));
+  err.Set("name", String::New(env, p->name));
+  err.Set("desc", String::New(env, p->desc));
 
   return err;
 }
 
 Number lzmaRet(Env env, lzma_ret rv) {
   if (rv != LZMA_OK && rv != LZMA_STREAM_END)
-    throw lzmaRetError(rv);
+    throw lzmaRetError(env, rv);
 
   return Number::New(env, rv);
 }
@@ -95,13 +92,9 @@ bool readBufferFromObj(Value buf_, std::vector<uint8_t>* data) {
 
 lzma_options_lzma parseOptionsLZMA (Value obj_) {
   HandleScope scope(obj_.Env());
-  Object obj;
+  Object obj = obj_.ToObject();
 
-  if (!obj_.IsObject())
-    obj = Object::New(obj_.Env());
-  else
-    obj = obj_.As<Object>();
-
+  lzma_options_lzma r;
   r.dict_size = GetIntegerProperty(obj, "dictSize", LZMA_DICT_SIZE_DEFAULT);
   r.lp = GetIntegerProperty(obj, "lp", LZMA_LP_DEFAULT);
   r.lc = GetIntegerProperty(obj, "lc", LZMA_LC_DEFAULT);
@@ -127,7 +120,7 @@ Value Uint64ToNumberMaxNull(Env env, uint64_t in) {
     return Number::New(env, in);
 }
 
-Value Uint64ToNumber0Null(uint64_t in) {
+Value Uint64ToNumber0Null(Env env, uint64_t in) {
   if (in == 0)
     return env.Null();
   else

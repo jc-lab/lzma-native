@@ -430,7 +430,7 @@ error:
 
 namespace lzma {
 
-void IndexParser::Init(Object exports) {
+void IndexParser::InitializeExports(Object exports) {
   exports["IndexParser"] = DefineClass(exports.Env(), "IndexParser", {
     InstanceMethod("init", &IndexParser::Init),
     InstanceMethod("feed", &IndexParser::Feed),
@@ -476,13 +476,13 @@ int64_t IndexParser::readCallback(void* opaque, uint8_t* buf, size_t count, int6
   currentReadBuffer = buf;
   currentReadSize = count;
 
-  Value argv[2] = {
+  napi_value argv[2] = {
     Uint64ToNumberMaxNull(Env(), count),
     Uint64ToNumberMaxNull(Env(), offset)
   };
 
-  Function read_cb = this->Value()["read_cb"].As<Function>();
-  Value ret = read_cb.Call(handle(), 2, argv);
+  Function read_cb = Napi::Value(Value()["read_cb"]).As<Function>();
+  Napi::Value ret = read_cb.Call(Value(), 2, argv);
 
   if (currentReadBuffer) {
     info.async = true;
@@ -494,8 +494,8 @@ int64_t IndexParser::readCallback(void* opaque, uint8_t* buf, size_t count, int6
   }
 }
 
-IndexParser::IndexParser(const CallbackInfo& info)
-  : ObjectWrap(info),
+IndexParser::IndexParser(const CallbackInfo& args)
+  : ObjectWrap(args),
     isCurrentlyInParseCall(false) {
   lzma_index_parser_data info_ = LZMA_INDEX_PARSER_DATA_INIT;
   info = info_;
@@ -509,13 +509,13 @@ IndexParser::IndexParser(const CallbackInfo& info)
   info.allocator = &allocator;
 }
 
-Value IndexParser::Init(const CallbackInfo& info) {
-  info.file_size = NumberToUint64ClampNullMax(info[0]);
-  info.memlimit = NumberToUint64ClampNullMax(info[1]);
+void IndexParser::Init(const CallbackInfo& args) {
+  info.file_size = NumberToUint64ClampNullMax(args[0]);
+  info.memlimit = NumberToUint64ClampNullMax(args[1]);
 }
 
-Local<Object> IndexParser::getObject() const {
-  Env env = Env();
+Object IndexParser::getObject() const {
+  Napi::Env env = Env();
   Object obj = Object::New(env);
 
   obj["streamPadding"] = Uint64ToNumberMaxNull(env, info.stream_padding);
@@ -529,7 +529,7 @@ Local<Object> IndexParser::getObject() const {
   return obj;
 }
 
-Value IndexParser::Parse(const CallbackInfo& info) {
+Value IndexParser::Parse(const CallbackInfo& args) {
   if (isCurrentlyInParseCall)
     throw Error::New(Env(), "Cannot call IndexParser::Parse recursively");
 
@@ -545,7 +545,7 @@ Value IndexParser::Parse(const CallbackInfo& info) {
 
   lzma_ret ret;
   {
-    RecursionGuard guard;
+    RecursionGuard guard(this);
     ret = my_lzma_parse_indexes_from_file(&info);
   }
 
@@ -555,17 +555,18 @@ Value IndexParser::Parse(const CallbackInfo& info) {
     return getObject();
   }
 
-  Object error = lzmaRetError(Env(), ret);
+  Error error = lzmaRetError(Env(), ret);
   if (info.message) {
-    error["message"] = String::New(Env(), info.message));
+    error.Value()["message"] = String::New(Env(), info.message);
   }
   throw error;
 }
 
 Value IndexParser::Feed(const CallbackInfo& info) {
-  Value value = info[0];
-  if (!value.IsTypedArray())
+  Napi::Value value_v = info[0];
+  if (!value_v.IsTypedArray())
     throw TypeError::New(Env(), "Expected Buffer as input");
+  TypedArray value = value_v.As<TypedArray>();
 
   if (currentReadBuffer == nullptr)
     throw Error::New(Env(), "No input data was expected");

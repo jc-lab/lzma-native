@@ -7,17 +7,17 @@ MTOptions::MTOptions(Value val) {
   opts_.flags = 0;
   opts_.filters = nullptr;
 
-  opts_.block_size = opt["blockSize"].ToNumber().Int64Value();
-  opts_.timeout = opt["timeout"].ToNumber().Uint32Value();
-  opts_.preset = opt["preset"].ToNumber().Uint32Value();
-  opts_.preset = (lzma_check)opt["check"].ToNumber().Int32Value();
-  opts_.threads = opt["threads"].ToNumber().Uint32Value();
+  opts_.block_size = Value(opt["blockSize"]).ToNumber().Int64Value();
+  opts_.timeout = Value(opt["timeout"]).ToNumber().Uint32Value();
+  opts_.preset = Value(opt["preset"]).ToNumber().Uint32Value();
+  opts_.preset = (lzma_check)Value(opt["check"]).ToNumber().Int32Value();
+  opts_.threads = Value(opt["threads"]).ToNumber().Uint32Value();
 
   if (opts_.threads == 0) {
     opts_.threads = lzma_cputhreads();
   }
 
-  Value filters = opts["filters"];
+  Value filters = opt["filters"];
   if (filters.IsArray()) {
     filters_.reset(new FilterArray(filters));
     opts_.filters = filters_->array();

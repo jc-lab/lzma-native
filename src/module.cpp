@@ -1,8 +1,8 @@
 #include "liblzma-node.hpp"
 
-namespace lzma {
+using namespace lzma;
 
-void moduleInit(Env env, Object exports) {
+static Napi::Object moduleInit(Env env, Object exports) {
   LZMAStream::InitializeExports(exports);
   IndexParser::InitializeExports(exports);
 
@@ -92,9 +92,8 @@ void moduleInit(Env env, Object exports) {
   exports["VERSION_STRING"] = String::New(env, LZMA_VERSION_STRING);
 
   exports["asyncCodeAvailable"] = Boolean::New(env, true);
+  return exports;
 }
 
-}
-
-NODE_API_MODULE(lzma_native, lzma::moduleInit)
+NODE_API_MODULE(lzma_native, moduleInit)
 

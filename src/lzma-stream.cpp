@@ -1,8 +1,8 @@
 #include "liblzma-node.hpp"
-#include <node_buffer.h>
 #include <cstring>
 #include <cstdlib>
 #include <cassert>
+#include <climits>
 
 namespace lzma {
 
@@ -36,7 +36,6 @@ LZMAStream::LZMAStream(const CallbackInfo& info) :
   allocator.free = free_for_lzma;
   allocator.opaque = static_cast<void*>(this);
   _.allocator = &allocator;
-  uv_mutex_init(&mutex);
 
   nonAdjustedExternalMemory = 0;
   MemoryManagement::AdjustExternalMemory(info.Env(), sizeof(LZMAStream));
@@ -55,8 +54,6 @@ void LZMAStream::resetUnderlying() {
 
 LZMAStream::~LZMAStream() {
   resetUnderlying();
-
-  uv_mutex_destroy(&mutex);
 
   MemoryManagement::AdjustExternalMemory(Env(), -int64_t(sizeof(LZMAStream)));
 }
@@ -97,7 +94,7 @@ void LZMAStream::adjustExternalMemory(int64_t bytesChange) {
 
 void LZMAStream::ResetUnderlying(const CallbackInfo& info) {
   MemScope mem_scope(this);
-  uv_mutex_guard lock(mutex);
+  std::lock_guard<std::mutex> lock(mutex);
 
   resetUnderlying();
 }
@@ -106,7 +103,7 @@ Value LZMAStream::SetBufsize(const CallbackInfo& info) {
   size_t oldBufsize, newBufsize = NumberToUint64ClampNullMax(info[0]);
 
   {
-    uv_mutex_guard lock(mutex);
+    std::lock_guard<std::mutex> lock(mutex);
 
     oldBufsize = bufsize;
 
@@ -119,14 +116,14 @@ Value LZMAStream::SetBufsize(const CallbackInfo& info) {
 
 void LZMAStream::Code(const CallbackInfo& info) {
   MemScope mem_scope(this);
-  uv_mutex_guard lock(mutex);
+  std::lock_guard<std::mutex> lock(mutex);
 
   std::vector<uint8_t> inputData;
 
   if (info[0].IsUndefined() || info[0].IsNull()) {
     shouldFinish = true;
   } else {
-    if (!readBufferFromObj(input[0], inputData))
+    if (!readBufferFromObj(info[0], &inputData))
       return;
 
     if (inputData.empty())
@@ -145,13 +142,21 @@ void LZMAStream::Code(const CallbackInfo& info) {
   }
 }
 
+template <typename T>
+struct Maybe {
+
+};
+
 void LZMAStream::invokeBufferHandlers(bool hasLock) {
-  Env env = Env();
+  Napi::Env env = Env();
   HandleScope scope(env);
   MemScope mem_scope(this);
-  uv_mutex_guard lock(mutex, !hasLock);
 
-  Function bufferHandler = handle()["bufferHandler"].As<Function>();
+  std::unique_lock<std::mutex> lock;
+  if (!hasLock)
+    lock = std::unique_lock<std::mutex>(mutex);
+
+  Function bufferHandler = Napi::Value(Value()["bufferHandler"]).As<Function>();
   std::vector<uint8_t> outbuf;
 
   auto CallBufferHandlerWithArgv = [&](size_t argc, const napi_value* argv) {
@@ -163,8 +168,8 @@ void LZMAStream::invokeBufferHandlers(bool hasLock) {
   uint64_t in = UINT64_MAX, out = UINT64_MAX;
   if (_.internal)
     lzma_get_progress(&_, &in, &out);
-  Value in_   = Uint64ToNumberMaxNull(env, in);
-  Value out_  = Uint64ToNumberMaxNull(env, out);
+  Napi::Value in_   = Uint64ToNumberMaxNull(env, in);
+  Napi::Value out_  = Uint64ToNumberMaxNull(env, out);
 
   while (outbufs.size() > 0) {
     outbuf = std::move(outbufs.front());
@@ -179,10 +184,10 @@ void LZMAStream::invokeBufferHandlers(bool hasLock) {
 
   bool reset = false;
   if (lastCodeResult != LZMA_OK) {
-    Value errorArg = env.Null();
+    Napi::Value errorArg = env.Null();
 
     if (lastCodeResult != LZMA_STREAM_END)
-      errorArg = lzmaRetError(env, lastCodeResult);
+      errorArg = lzmaRetError(env, lastCodeResult).Value();
 
     reset = true;
 
@@ -195,7 +200,7 @@ void LZMAStream::invokeBufferHandlers(bool hasLock) {
     processedChunks = 0;
 
     napi_value argv[5] = {
-      env.Undefined(), Integer::New(env, static_cast<uint32_t>(pc)),
+      env.Undefined(), Number::New(env, static_cast<uint32_t>(pc)),
       env.Undefined(), in_, out_
     };
     CallBufferHandlerWithArgv(5, argv);
@@ -206,7 +211,7 @@ void LZMAStream::invokeBufferHandlers(bool hasLock) {
 }
 
 void LZMAStream::doLZMACodeFromAsync() {
-  uv_mutex_guard lock(mutex);
+  std::lock_guard<std::mutex> lock(mutex);
 
   doLZMACode();
 }
@@ -281,41 +286,41 @@ void LZMAStream::doLZMACode() {
   }
 }
 
-void LZMAStream::Init(Object exports) {
+void LZMAStream::InitializeExports(Object exports) {
   exports["Stream"] = DefineClass(exports.Env(), "LZMAStream", {
-    InstanceMethod("setBufsize", &IndexParser::SetBufsize),
-    InstanceMethod("resetUnderlying", &IndexParser::ResetUnderlying),
-    InstanceMethod("code", &IndexParser::Code),
-    InstanceMethod("memusage", &IndexParser::Memusage),
-    InstanceMethod("memlimitGet", &IndexParser::MemlimitGet),
-    InstanceMethod("memlimitSet", &IndexParser::MemlimitSet),
-    InstanceMethod("rawEncoder_", &IndexParser::RawEncoder),
-    InstanceMethod("rawDecoder_", &IndexParser::RawDecoder),
-    InstanceMethod("filtersUpdate", &IndexParser::FiltersUpdate),
-    InstanceMethod("easyEncoder_", &IndexParser::EasyEncoder),
-    InstanceMethod("streamEncoder_", &IndexParser::StreamEncoder),
-    InstanceMethod("aloneEncoder", &IndexParser::AloneEncoder),
-    InstanceMethod("mtEncoder_", &IndexParser::MTEncoder),
-    InstanceMethod("streamDecoder_", &IndexParser::StreamDecoder),
-    InstanceMethod("autoDecoder_", &IndexParser::AutoDecoder),
-    InstanceMethod("aloneDecoder_", &IndexParser::AloneDecoder),
+    InstanceMethod("setBufsize", &LZMAStream::SetBufsize),
+    InstanceMethod("resetUnderlying", &LZMAStream::ResetUnderlying),
+    InstanceMethod("code", &LZMAStream::Code),
+    InstanceMethod("memusage", &LZMAStream::Memusage),
+    InstanceMethod("memlimitGet", &LZMAStream::MemlimitGet),
+    InstanceMethod("memlimitSet", &LZMAStream::MemlimitSet),
+    InstanceMethod("rawEncoder_", &LZMAStream::RawEncoder),
+    InstanceMethod("rawDecoder_", &LZMAStream::RawDecoder),
+    InstanceMethod("filtersUpdate", &LZMAStream::FiltersUpdate),
+    InstanceMethod("easyEncoder_", &LZMAStream::EasyEncoder),
+    InstanceMethod("streamEncoder_", &LZMAStream::StreamEncoder),
+    InstanceMethod("aloneEncoder", &LZMAStream::AloneEncoder),
+    InstanceMethod("mtEncoder_", &LZMAStream::MTEncoder),
+    InstanceMethod("streamDecoder_", &LZMAStream::StreamDecoder),
+    InstanceMethod("autoDecoder_", &LZMAStream::AutoDecoder),
+    InstanceMethod("aloneDecoder_", &LZMAStream::AloneDecoder),
   });
 }
 
 Value LZMAStream::Memusage(const CallbackInfo& info) {
-  uv_mutex_guard lock(mutex);
+  std::lock_guard<std::mutex> lock(mutex);
 
   return Uint64ToNumber0Null(Env(), lzma_memusage(&_));
 }
 
 Value LZMAStream::MemlimitGet(const CallbackInfo& info) {
-  uv_mutex_guard lock(mutex);
+  std::lock_guard<std::mutex> lock(mutex);
 
   return Uint64ToNumber0Null(Env(), lzma_memlimit_get(&_));
 }
 
 Value LZMAStream::MemlimitSet(const CallbackInfo& info) {
-  uv_mutex_guard lock(mutex);
+  std::lock_guard<std::mutex> lock(mutex);
 
   if (!info[0].IsNumber())
     throw TypeError::New(Env(), "memlimitSet() needs a numerical argument");
@@ -326,7 +331,7 @@ Value LZMAStream::MemlimitSet(const CallbackInfo& info) {
 }
 
 Value LZMAStream::RawEncoder(const CallbackInfo& info) {
-  uv_mutex_guard lock(mutex);
+  std::lock_guard<std::mutex> lock(mutex);
 
   const FilterArray filters(info[0]);
 
@@ -334,7 +339,7 @@ Value LZMAStream::RawEncoder(const CallbackInfo& info) {
 }
 
 Value LZMAStream::RawDecoder(const CallbackInfo& info) {
-  uv_mutex_guard lock(mutex);
+  std::lock_guard<std::mutex> lock(mutex);
 
   const FilterArray filters(info[0]);
 
@@ -342,7 +347,7 @@ Value LZMAStream::RawDecoder(const CallbackInfo& info) {
 }
 
 Value LZMAStream::FiltersUpdate(const CallbackInfo& info) {
-  uv_mutex_guard lock(mutex);
+  std::lock_guard<std::mutex> lock(mutex);
 
   const FilterArray filters(info[0]);
 
@@ -350,7 +355,7 @@ Value LZMAStream::FiltersUpdate(const CallbackInfo& info) {
 }
 
 Value LZMAStream::EasyEncoder(const CallbackInfo& info) {
-  uv_mutex_guard lock(mutex);
+  std::lock_guard<std::mutex> lock(mutex);
 
   int64_t preset = info[0].ToNumber().Int64Value();
   int64_t check = info[1].ToNumber().Int64Value();
@@ -359,7 +364,7 @@ Value LZMAStream::EasyEncoder(const CallbackInfo& info) {
 }
 
 Value LZMAStream::StreamEncoder(const CallbackInfo& info) {
-  uv_mutex_guard lock(mutex);
+  std::lock_guard<std::mutex> lock(mutex);
 
   const FilterArray filters(info[0]);
   int64_t check = info[1].ToNumber().Int64Value();
@@ -368,15 +373,15 @@ Value LZMAStream::StreamEncoder(const CallbackInfo& info) {
 }
 
 Value LZMAStream::MTEncoder(const CallbackInfo& info) {
-  uv_mutex_guard lock(mutex);
+  std::lock_guard<std::mutex> lock(mutex);
 
   const MTOptions mt(info[0]);
 
-  return lzmaRet(Env(), lzma_stream_encoder_mt(&_, mt.opts())));
+  return lzmaRet(Env(), lzma_stream_encoder_mt(&_, mt.opts()));
 }
 
 Value LZMAStream::AloneEncoder(const CallbackInfo& info) {
-  uv_mutex_guard lock(mutex);
+  std::lock_guard<std::mutex> lock(mutex);
 
   lzma_options_lzma o = parseOptionsLZMA(info[0]);
 
@@ -384,7 +389,7 @@ Value LZMAStream::AloneEncoder(const CallbackInfo& info) {
 }
 
 Value LZMAStream::StreamDecoder(const CallbackInfo& info) {
-  uv_mutex_guard lock(mutex);
+  std::lock_guard<std::mutex> lock(mutex);
 
   uint64_t memlimit = NumberToUint64ClampNullMax(info[0]);
   int64_t flags = info[1].ToNumber().Int64Value();
@@ -393,7 +398,7 @@ Value LZMAStream::StreamDecoder(const CallbackInfo& info) {
 }
 
 Value LZMAStream::AutoDecoder(const CallbackInfo& info) {
-  uv_mutex_guard lock(mutex);
+  std::lock_guard<std::mutex> lock(mutex);
 
   uint64_t memlimit = NumberToUint64ClampNullMax(info[0]);
   int64_t flags = info[1].ToNumber().Int64Value();
@@ -402,7 +407,7 @@ Value LZMAStream::AutoDecoder(const CallbackInfo& info) {
 }
 
 Value LZMAStream::AloneDecoder(const CallbackInfo& info) {
-  uv_mutex_guard lock(mutex);
+  std::lock_guard<std::mutex> lock(mutex);
 
   uint64_t memlimit = NumberToUint64ClampNullMax(info[0]);
 
