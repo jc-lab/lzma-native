@@ -90,9 +90,10 @@ bool readBufferFromObj(Value buf_, std::vector<uint8_t>* data) {
   return true;
 }
 
-lzma_options_lzma parseOptionsLZMA (Value obj_) {
-  HandleScope scope(obj_.Env());
-  Object obj = obj_.ToObject();
+lzma_options_lzma parseOptionsLZMA (Value val) {
+  HandleScope scope(val.Env());
+  Object obj = val.IsUndefined() || val.IsNull() ?
+      Object::New(val.Env()) : val.ToObject();
 
   lzma_options_lzma r;
   r.dict_size = GetIntegerProperty(obj, "dictSize", LZMA_DICT_SIZE_DEFAULT);

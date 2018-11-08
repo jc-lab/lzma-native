@@ -28,13 +28,13 @@ FilterArray::FilterArray(Value val) {
     f.id = FilterByName(id);
     f.options = nullptr;
 
-    if ((opt_v.IsUndefined() || opt_v.IsNull()) &&
-        (f.id != LZMA_FILTER_LZMA1 && f.id != LZMA_FILTER_LZMA2)) {
+    bool has_options = !opt_v.IsUndefined() && !opt_v.IsNull();
+    if (!has_options && (f.id != LZMA_FILTER_LZMA1 && f.id != LZMA_FILTER_LZMA2)) {
       filters.push_back(f);
       continue;
     }
 
-    Object opt = Value(entry[options_]).ToObject();
+    Object opt = has_options ? opt_v.ToObject() : Object::New(env);
 
     optbuf.push_back(options());
     union options& bopt = optbuf.back();

@@ -3,7 +3,8 @@
 namespace lzma {
 
 MTOptions::MTOptions(Value val) {
-  Object opt = val.ToObject();
+  Object opt = val.IsUndefined() || val.IsNull() ?
+      Object::New(val.Env()) : val.ToObject();
   opts_.flags = 0;
   opts_.filters = nullptr;
 
