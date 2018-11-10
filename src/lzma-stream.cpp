@@ -161,7 +161,7 @@ void LZMAStream::invokeBufferHandlers(bool hasLock) {
 
   auto CallBufferHandlerWithArgv = [&](size_t argc, const napi_value* argv) {
     if (!hasLock) lock.unlock();
-    bufferHandler.MakeCallback(Value(), 5, argv);
+    bufferHandler.MakeCallback(Value(), 5, argv, async_context);
     if (!hasLock) lock.lock();
   };
 

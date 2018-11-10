@@ -56,9 +56,7 @@ FilterArray::FilterArray(Value val) {
 
     filters.push_back(f);
   }
-}
 
-void FilterArray::finish() {
   lzma_filter end;
   end.id = LZMA_VLI_UNKNOWN;
   filters.push_back(end);

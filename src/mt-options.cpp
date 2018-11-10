@@ -11,7 +11,7 @@ MTOptions::MTOptions(Value val) {
   opts_.block_size = Value(opt["blockSize"]).ToNumber().Int64Value();
   opts_.timeout = Value(opt["timeout"]).ToNumber().Uint32Value();
   opts_.preset = Value(opt["preset"]).ToNumber().Uint32Value();
-  opts_.preset = (lzma_check)Value(opt["check"]).ToNumber().Int32Value();
+  opts_.check = (lzma_check)Value(opt["check"]).ToNumber().Int32Value();
   opts_.threads = Value(opt["threads"]).ToNumber().Uint32Value();
 
   if (opts_.threads == 0) {

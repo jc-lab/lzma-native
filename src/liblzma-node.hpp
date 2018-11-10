@@ -112,8 +112,6 @@ namespace lzma {
       FilterArray(const FilterArray&);
       FilterArray& operator=(const FilterArray&);
 
-      void finish();
-
       union options {
         lzma_options_delta delta;
         lzma_options_lzma lzma;
