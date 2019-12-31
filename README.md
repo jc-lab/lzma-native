@@ -14,6 +14,8 @@ Node.js interface to the native liblzma compression library (.xz file format, am
 This package provides interfaces for compression and decompression
 of `.xz` (and legacy `.lzma`) files, both stream-based and string-based.
 
+**This lzma-native-preview package supports worker-threads.**
+
 <a name="example-usage"></a>
 
 ## Example usage

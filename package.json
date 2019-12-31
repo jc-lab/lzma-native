@@ -8,7 +8,13 @@
     "name": "Anna Henningsen",
     "email": "anna@addaleax.net"
   },
-  "description": "Provides bindings to the native liblzma library (.xz file format, among others)",
+  "contributors": [
+    {
+      "name": "Joseph Lee",
+      "email": "development@jc-lab.net"
+    }
+  ],
+  "description": "Provides bindings to the native liblzma library (.xz file format, among others). This lzma-native-preview package supports worker-threads",
   "main": "index",
   "bin": {
     "lzmajs": "./bin/lzmajs"
@@ -30,7 +36,7 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/addaleax/lzma-native.git"
+    "url": "https://github.com/jc-lab/lzma-native.git"
   },
   "scripts": {
     "install": "node-pre-gyp install --fallback-to-build && rimraf build",
