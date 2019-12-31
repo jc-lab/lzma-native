@@ -1,6 +1,6 @@
 {
-  "name": "lzma-native",
-  "version": "5.0.1",
+  "name": "lzma-native-preview",
+  "version": "5.0.1-rc2",
   "engines": {
     "node": ">=6.0.0"
   },
@@ -50,7 +50,7 @@
     "mocha": "^5.0.5"
   },
   "binary": {
-    "module_name": "lzma_native",
+    "module_name": "lzma_native_preview",
     "module_path": "./binding-v{version}-{node_abi}-{platform}-{arch}/",
     "host": "https://node-pre-gyp.addaleax.net",
     "remote_path": "./lzma-native/"

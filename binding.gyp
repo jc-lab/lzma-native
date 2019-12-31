@@ -4,7 +4,7 @@
   },
   "targets": [
     {
-      "target_name": "lzma_native",
+      "target_name": "lzma_native_preview",
       "sources": [
         "src/util.cpp",
         "src/liblzma-functions.cpp",
